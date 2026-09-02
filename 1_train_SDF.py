@@ -65,13 +65,13 @@ if __name__ == '__main__':
     if config['wandb']['use']:
         optional_kw_args['logger'] = wandb_logger
 
-    trainer = Trainer(devices=config['devices'], accelerator=config["accelerator"],
-                      benchmark=True,
+    trainer = Trainer(benchmark=True,
                       callbacks=[ModelSummary(max_depth=1), checkpoint_callback, TQDMProgressBar()],
                       check_val_every_n_epoch=config['evaluation']['freq_epoch'],
                       default_root_dir=config['default_root_dir'],
                       max_epochs=config['num_epochs'], profiler="simple",
                       log_every_n_steps=5,
+                      **config['distributed'],
                       **optional_kw_args)
 
     Log.info("Start training...")

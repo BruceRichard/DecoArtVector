@@ -8,9 +8,17 @@ wandb:
 
 default_root_dir: train_root_dir/SDF
 
+# Per-process DDP training. CUDA_VISIBLE_DEVICES remaps these local indices.
+distributed:
+  accelerator: gpu
+  devices: [0, 1, 2, 3]
+  strategy: ddp
+  precision: 32-true
+  use_distributed_sampler: true
+
 dataset_n_dataloader:
-  batch_size: 16
-  n_workers: 16
+  batch_size: 16  # per GPU; global batch size is 64 with four GPUs
+  n_workers: 8    # per GPU; four DDP workers create 32 loader workers in total
 
   dataset_dir: data/datasets
   samples_per_mesh: 16000
