@@ -27,11 +27,12 @@ if __name__ == '__main__':
     run_name = time.strftime("%m-%d-%I%p-%M-%S")
     config = parse_config_from_args()
     seed_everything(config['seed'])
-    wandb_run = wandb.init(
-        config=config, project=config['wandb']['project'],
-        entity=config['wandb']['entity'], name=run_name,
-    )
-    wandb_logger = WandbLogger()
+    if config['wandb']['use']:
+        wandb_run = wandb.init(
+            config=config, project=config['wandb']['project'],
+            entity=config['wandb']['entity'], name=run_name,
+        )
+        wandb_logger = WandbLogger()
 
     if config['pretrained_model']:
         model = SDFAutoEncoder.load_from_checkpoint(config['pretrained_model'])
@@ -61,7 +62,8 @@ if __name__ == '__main__':
 
     # Configure trainer
     optional_kw_args = dict()
-    optional_kw_args['logger'] = wandb_logger
+    if config['wandb']['use']:
+        optional_kw_args['logger'] = wandb_logger
 
     trainer = Trainer(devices=config['devices'], accelerator=config["accelerator"],
                       benchmark=True,

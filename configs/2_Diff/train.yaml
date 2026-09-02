@@ -1,7 +1,7 @@
 seed: 123456790
 wandb:
-  use: true
-  project: DecoArt/Diff
+  use: false
+  project: DecoArt-Diff
   entity: zzdcn-hit
 
 

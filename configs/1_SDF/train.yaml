@@ -2,7 +2,8 @@ pretrained_model: null
 
 seed: 123456790
 wandb:
-  project: DecoArt/SDF
+  use: false
+  project: DecoArt-SDF
   entity: zzdcn-hit
 
 default_root_dir: train_root_dir/SDF
