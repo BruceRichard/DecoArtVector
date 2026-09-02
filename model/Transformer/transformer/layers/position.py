@@ -12,8 +12,6 @@ class PositionGRUEmbedding(nn.Module):
         self.act_comp = nn.ReLU()
         self.fc1_comp = nn.Linear(d_model, dim_single_emb)
 
-        self.combine_fc = nn.Linear(2 * d_model, d_model)
-
         self.gru = LayerNormGRUCell(d_model, d_model)
 
     def mlp_compress(self, x):
@@ -43,18 +41,4 @@ class PositionGRUEmbedding(nn.Module):
             current = shorted_gru_emb[:, part_idx, :]
             emb[:, part_idx, :] = torch.cat((current, prev), dim=-1)
 
-        # print('3 emb', emb.shape)
-        # torch.set_printoptions(threshold=2000000)
-        # with open('logs/debug/emb0.txt', 'w') as f:
-        #     f.write(emb[0].__str__())
-
-        # with open('logs/debug/emb1.txt', 'w') as f:
-        #     f.write(emb[1].__str__())
-
-        # with open('logs/debug/emb2.txt', 'w') as f:
-        #     f.write(emb[2].__str__())
-
-
-        tokens = self.combine_fc(torch.cat((tokens['token'], emb), dim=-1))
-
-        return tokens
+        return emb

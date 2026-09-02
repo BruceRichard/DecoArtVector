@@ -33,6 +33,7 @@ class FactorizedStateEmbedding(nn.Module):
             else None
         )
         self.gate = nn.Linear(2 * d_model, d_model)
+        self.fusion = nn.Linear(3 * d_model, d_model)
         self.norm = nn.LayerNorm(d_model)
 
     def forward(self, structure, geometry, fa, return_components=False):
@@ -40,24 +41,30 @@ class FactorizedStateEmbedding(nn.Module):
         geometry_embedding = self.geometry_encoder(geometry)
 
         if self.position_embedding is None:
-            tree_structure = structure_embedding
+            tree_embedding = torch.zeros_like(structure_embedding)
         else:
-            tree_structure = self.position_embedding({
+            tree_embedding = self.position_embedding({
                 'token': structure_embedding,
                 'fa': fa,
             })
 
-        gate = torch.sigmoid(
-            self.gate(torch.cat((tree_structure, geometry_embedding), dim=-1))
+        structure_tree = torch.cat(
+            (structure_embedding, tree_embedding), dim=-1
         )
-        fused = self.norm(tree_structure + gate * geometry_embedding)
+        gate = torch.sigmoid(self.gate(structure_tree))
+        gated_geometry = gate * geometry_embedding
+        fused = self.norm(
+            self.fusion(torch.cat((structure_tree, gated_geometry), dim=-1))
+        )
 
         if not return_components:
             return fused
 
         return fused, {
             'structure': structure_embedding,
-            'tree_structure': tree_structure,
+            'tree': tree_embedding,
+            'structure_tree': structure_tree,
             'geometry': geometry_embedding,
             'gate': gate,
+            'gated_geometry': gated_geometry,
         }
