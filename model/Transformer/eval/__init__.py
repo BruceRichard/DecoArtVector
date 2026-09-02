@@ -104,15 +104,12 @@ class Evaluater():
         exist_node = {
             'fa': torch.tensor([0]).to(self.device),
             'token': copy.deepcopy((self.start_token[:16])).unsqueeze(0).to(self.device),
-            'text_hat': torch.zeros((64)).unsqueeze(0).to(self.device),
-            'z_hat': torch.zeros((4, 768)).unsqueeze(0).to(self.device),
             'latent': torch.zeros((768)).unsqueeze(0).to(self.device)
         }
         round = 1
         Log.info('[2] Generate nodes')
         atten_weights_list = []
 
-        use_shape_prior = True
         while True:
             current_length = exist_node['token'].size(0)
             Log.info('   - Generate nodes round: %s, part count: %s', round, exist_node['token'].size(0))
@@ -121,7 +118,7 @@ class Evaluater():
                 # batch=1 for evaluation.
                 output = self.model.transformer({
                                 'fa': exist_node['fa'].unsqueeze(0),        # batched.
-                                'token': torch.cat((exist_node['token'], exist_node['text_hat']), dim=1).unsqueeze(0),
+                                'token': torch.cat((exist_node['token'], exist_node['latent']), dim=1).unsqueeze(0),
                             },
                             self.generate_non_padding_mask(current_length),
                             encoded_text) # unbatched.
@@ -141,12 +138,12 @@ class Evaluater():
                 pred_text_hat = condition['text_hat'][end_token_mask] # torch.Size([1, 64])
                 pred_z_logits = condition['z_logits'][end_token_mask] # torch.Size([1, 4, 128])
                 q_z, _KL, _perplexity, _logits = self.z_mini_encoder.forward_with_logits_or_x(tau=0.5, logits=pred_z_logits)
-                latent_code = None
+                latent_code = self.model.diffusion.model.generate_conditional({
+                    'z_hat': q_z,
+                    'text': pred_text_hat,
+                })
             else:
                 latent_code = condition[end_token_mask] # torch.Size([1, 768])
-                pred_text_hat = torch.zeros((64)).unsqueeze(0).to(self.device)
-                q_z = None
-                use_shape_prior = False
 
             result = articulated_info
 
@@ -156,20 +153,11 @@ class Evaluater():
             exist_node['fa'] = torch.cat((exist_node['fa'], fa_idx), dim=0)
             exist_node['token'] = torch.cat((exist_node['token'], result), dim=0)
 
-            if pred_text_hat is not None:   exist_node['text_hat'] = torch.cat((exist_node['text_hat'], pred_text_hat), dim=0)
-            if q_z is not None:             exist_node['z_hat'] = torch.cat((exist_node['z_hat'], q_z), dim=0)
-            if latent_code is not None:     exist_node['latent'] = torch.cat((exist_node['latent'], latent_code), dim=0)
+            exist_node['latent'] = torch.cat((exist_node['latent'], latent_code), dim=0)
 
 
-        Log.info('[3] reconstruct latent code with condition')
-        if use_shape_prior:
-            latent = self.model.diffusion.model.generate_conditional({
-                'z_hat': exist_node['z_hat'],
-                'text': exist_node['text_hat'],
-            })
-            exist_node['token'] = torch.cat((exist_node['token'], latent), dim=-1)
-        else:
-            exist_node['token'] = torch.cat((exist_node['token'], exist_node['latent']), dim=-1)
+        Log.info('[3] Assemble structure and geometry state')
+        exist_node['token'] = torch.cat((exist_node['token'], exist_node['latent']), dim=-1)
 
         processed_nodes = []
         Log.info('[4] Generate mesh')

@@ -5,8 +5,8 @@ from functools import reduce
 
 from .layers.decoder_layer import DecoderLayer
 from .layers.post_encoder import PostEncoder, ResnetBlockFC
-from .layers.token import MLPTokenizer, MLPUnTokenizer
-from .layers.position import PositionGRUEmbedding
+from .layers.token import MLPUnTokenizer
+from .layers.factorized_state import FactorizedStateEmbedding
 # from .layers.vq_embedding import VQEmbedding
 
 from utils.mylogging import Log
@@ -29,9 +29,9 @@ class TransformerDecoder(nn.Module):
         self.to_z_logits_fc = nn.Linear(self.part_structure['condition'], self.diff_config['gsemb_num_embeddings'] * self.diff_config['gsemb_latent_dim'])
         self.to_text_hat_fc = nn.Linear(self.part_structure['condition'], self.diff_config['diffusion_model_config']['text_hat_dim'])
 
-        d_token_input = sum(
+        d_structure_input = sum(
             [v for k, v in self.part_structure.items() if k != 'condition' and k != 'latentcode']
-        ) + 64 # 64 for text_hat.
+        )
 
         d_token_condition = sum(
             [v for k, v in self.part_structure.items() if k != 'latentcode']
@@ -42,15 +42,11 @@ class TransformerDecoder(nn.Module):
         self.dim_latent = self.part_structure['latentcode']
         self.dim_condition = self.part_structure['condition']
 
-        if self.m_config.get('tree_position_embedding', True):
-            self.position_embedding = PositionGRUEmbedding(d_model=self.d_model,
-                                                        dim_single_emb=self.m_config['position_embedding_dim_single_emb'],
-                                                        dropout=self.m_config['position_embedding_dropout'])
-        else:
+        use_tree_position = self.m_config.get('tree_position_embedding', True)
+        if not use_tree_position:
             # For ablation study.
             Log.critical("Didn't Use PositionGRUEmbedding")
             import time; time.sleep(3)
-            self.position_embedding = None
 
         self.use_shape_prior = self.m_config.get('shape_prior', True)
         if not self.use_shape_prior:
@@ -69,10 +65,15 @@ class TransformerDecoder(nn.Module):
         # self.vq_embedding   = VQEmbedding(self.m_config['n_embed'], self.m_config['vq_expand_dim'][0], beta=self.m_config['vq_beta'])
         # self.latentcode_to_condition = nn.Linear(self.expand_latent_dim, self.dim_condition)
 
-        self.tokenizer      = MLPTokenizer(d_token=d_token_input,
-                                           d_hidden=self.m_config['tokenizer_hidden_dim'],
-                                           d_model=self.d_model,
-                                           drop_out=self.m_config['tokenizer_dropout'])
+        self.state_embedding = FactorizedStateEmbedding(
+            structure_dim=d_structure_input,
+            geometry_dim=self.dim_latent,
+            hidden_dim=self.m_config['tokenizer_hidden_dim'],
+            d_model=self.d_model,
+            position_dim_single_emb=self.m_config['position_embedding_dim_single_emb'],
+            dropout=self.m_config['tokenizer_dropout'],
+            use_tree_position=use_tree_position,
+        )
 
         self.untokenizer    = MLPUnTokenizer(d_token_condition_with_bbx_dis,
                                              d_hidden=self.m_config['tokenizer_hidden_dim'],
@@ -107,13 +108,9 @@ class TransformerDecoder(nn.Module):
 
         batch, n_part, _ = input['token'].size()
 
-        # Tokenize the input
-        input['token'] = self.tokenizer(input['token'])
-
-        if self.position_embedding is not None:
-            tokens = self.position_embedding(input)
-        else:
-            tokens = input['token']
+        structure = input['token'][..., :-self.dim_latent]
+        geometry = input['token'][..., -self.dim_latent:]
+        tokens = self.state_embedding(structure, geometry, input['fa'])
 
         attn_mask = self.generate_mask(n_part)
 

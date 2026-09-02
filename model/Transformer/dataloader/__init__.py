@@ -8,6 +8,18 @@ from glob import glob
 from pathlib import Path
 from torch.utils.data import dataset
 
+
+def extract_factorized_state(node, geometry_dim=768):
+    """Return [b, j, l, v], using zero geometry for special tokens."""
+    structure = torch.tensor(node['token'][:16], dtype=torch.float32)
+    latent = node.get('packed_info', {}).get('latent')
+    if latent is None:
+        geometry = torch.zeros(geometry_dim, dtype=torch.float32)
+    else:
+        assert len(latent) == geometry_dim
+        geometry = torch.tensor(latent, dtype=torch.float32)
+    return torch.cat((structure, geometry), dim=0)
+
 class TransDiffusionDataset(dataset.Dataset):
     def __init__(self, dataset_path: str, cut_off: int, enc_data_fieldname: str, cache_data: bool=True):
         self.dataset_root_path = Path(dataset_path)
@@ -83,11 +95,7 @@ class TransDiffusionDataset(dataset.Dataset):
         #     json.dump(input, f, indent=4)
 
         for node_idx, node in enumerate(input):
-            raw_data_info = node['token'][:16]
-            assert len(node['token'][16:]) == 768
-            text_hat = node['packed_info']['text_hat']
-
-            node['token'] = torch.tensor(raw_data_info + text_hat, dtype=torch.float32)
+            node['token'] = extract_factorized_state(node)
             dfn_fa = node['dfn_fa']
             for idx in range(len(input)):
                 if input[idx]['dfn'] == dfn_fa:
@@ -101,7 +109,10 @@ class TransDiffusionDataset(dataset.Dataset):
             if node.get('dfn_fa') is not None: del node['dfn_fa']
 
         for _ in range(self.max_count_token - len(input)):
-            input.append({'token': copy.deepcopy(self.pad_token[:80]), 'fa': 0})
+            input.append({
+                'token': torch.cat((copy.deepcopy(self.pad_token[:16]), torch.zeros(768))),
+                'fa': 0,
+            })
 
         transformed_input = {
                 'token': torch.stack([node['token'] for node in input]),

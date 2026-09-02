@@ -1,4 +1,4 @@
-base_on_model: /ssd1/dengzhidong/.sym/final/ArtFormer/train_root_dir/Transformer_Diffusion/checkpoint/05-18-02PM-13-29/epoch=0573-loss=0.33387.ckpt
+base_on_model: null
 
 seed: 1234567890
 wandb:
